@@ -47,65 +47,85 @@ export function DesktopSpeedMenu({
         };
     }, [containerRef]);
 
-    // Calculate menu position with available space awareness
+    // Dual Positioning Strategy
     const calculateMenuPosition = React.useCallback(() => {
         if (!buttonRef.current || !containerRef.current) return;
 
-        if (!buttonRef.current || !containerRef.current) return;
+        if (!isRotated) {
+            // Normal Mode: Non-rotated, potentially non-fullscreen
+            // Use Viewport Coordinates (getBoundingClientRect) and Portal to Document Body
+            // This allows the menu to break out of the video container (overflow issue)
+            const buttonRect = buttonRef.current.getBoundingClientRect();
+            // We want it to be positioned relative to the viewport
+            // buttonRect.top/left are already viewport coordinates
+            const viewportHeight = window.innerHeight;
 
-        // Calculate position relative to container using offsetParent loop
-        // This works regardless of container rotation because we stay in the local coordinate system
-        let top = 0;
-        let left = 0;
-        let el: HTMLElement | null = buttonRef.current;
+            const spaceBelow = viewportHeight - buttonRect.bottom - 10;
+            const spaceAbove = buttonRect.top - 10;
 
-        while (el && el !== containerRef.current) {
-            top += el.offsetTop;
-            left += el.offsetLeft;
-            el = el.offsetParent as HTMLElement;
-        }
+            const estimatedMenuHeight = 250;
+            const actualMenuHeight = menuRef.current?.offsetHeight || estimatedMenuHeight;
 
-        const buttonHeight = buttonRef.current.offsetHeight;
-        const buttonWidth = buttonRef.current.offsetWidth;
-        const containerHeight = containerRef.current.offsetHeight;
+            const openUpward = spaceBelow < Math.min(actualMenuHeight, 200) && spaceAbove > spaceBelow;
+            const maxHeight = openUpward
+                ? Math.min(spaceAbove, actualMenuHeight)
+                : Math.min(spaceBelow, viewportHeight * 0.7);
 
-        // Use container dimensions for available space
-        const spaceBelow = containerHeight - (top + buttonHeight) - 20;
-        const spaceAbove = top - 20;
-
-        // Estimate menu height (or use actual if already rendered)
-        const estimatedMenuHeight = 250; // approximate height of speed menu
-        const actualMenuHeight = menuRef.current?.offsetHeight || estimatedMenuHeight;
-
-        // Determine if we should open upward
-        const openUpward = spaceBelow < Math.min(actualMenuHeight, 200) && spaceAbove > spaceBelow;
-
-        // Calculate max-height based on available space
-        const maxHeight = openUpward
-            ? Math.min(spaceAbove, actualMenuHeight)
-            : Math.min(spaceBelow, containerHeight * 0.7);
-
-        if (openUpward) {
             setMenuPosition({
-                top: top - 10,
-                left: left + buttonWidth, // Right align? No, original was left: buttonRect.right - containerRect.left
-                // Original logic: left = buttonRect.right - containerRect.left. 
-                // In local coords, buttonRect.right = left + buttonWidth.
-                // But we want to align the RIGHT edge of menu with RIGHT edge of button?
-                // CSS uses `transform: translateX(-100%)` and `left: ${menuPos.left}`.
-                // So left should be the right edge of the button.
+                top: openUpward
+                    ? buttonRect.top - 10 // Bottom of menu at top of button
+                    : buttonRect.bottom + 10, // Top of menu at bottom of button
+                left: buttonRect.right, // Align right edge (transform handled in CSS)
                 maxHeight: `${maxHeight}px`,
-                openUpward: true
+                openUpward: openUpward
             });
         } else {
-            setMenuPosition({
-                top: top + buttonHeight + 10,
-                left: left + buttonWidth,
-                maxHeight: `${maxHeight}px`,
-                openUpward: false
-            });
+            // Rotated Mode: Fullscreen/Landscape forced
+            // Use Container Coordinates (offset loop) and Portal to Container
+            // This ensures rotation transforms apply correctly to the menu
+
+            let top = 0;
+            let left = 0;
+            let el: HTMLElement | null = buttonRef.current;
+
+            while (el && el !== containerRef.current) {
+                top += el.offsetTop;
+                left += el.offsetLeft;
+                el = el.offsetParent as HTMLElement;
+            }
+
+            const buttonHeight = buttonRef.current.offsetHeight;
+            const buttonWidth = buttonRef.current.offsetWidth;
+            const containerHeight = containerRef.current.offsetHeight;
+
+            const spaceBelow = containerHeight - (top + buttonHeight) - 20;
+            const spaceAbove = top - 20;
+
+            const estimatedMenuHeight = 250;
+            const actualMenuHeight = menuRef.current?.offsetHeight || estimatedMenuHeight;
+
+            const openUpward = spaceBelow < Math.min(actualMenuHeight, 200) && spaceAbove > spaceBelow;
+            const maxHeight = openUpward
+                ? Math.min(spaceAbove, actualMenuHeight)
+                : Math.min(spaceBelow, containerHeight * 0.7);
+
+            if (openUpward) {
+                setMenuPosition({
+                    top: top - 10,
+                    left: left + buttonWidth,
+                    maxHeight: `${maxHeight}px`,
+                    openUpward: true
+                });
+            } else {
+                setMenuPosition({
+                    top: top + buttonHeight + 10,
+                    left: left + buttonWidth,
+                    maxHeight: `${maxHeight}px`,
+                    openUpward: false
+                });
+            }
         }
-    }, [containerRef]);
+    }, [containerRef, isRotated]);
 
 
 
@@ -127,7 +147,7 @@ export function DesktopSpeedMenu({
             const timer = setTimeout(calculateMenuPosition, 50);
             return () => clearTimeout(timer);
         }
-    }, [showSpeedMenu, calculateMenuPosition]);
+    }, [showSpeedMenu, calculateMenuPosition, isRotated]);
 
     const handleToggle = () => {
         if (!showSpeedMenu) {
@@ -139,10 +159,18 @@ export function DesktopSpeedMenu({
     const MenuContent = (
         <div
             ref={menuRef}
-            className={`absolute z-[50] bg-[var(--glass-bg)] backdrop-blur-[25px] saturate-[180%] rounded-[var(--radius-2xl)] border border-[var(--glass-border)] shadow-[var(--shadow-md)] p-1 sm:p-1.5 w-fit min-w-[3.5rem] sm:min-w-[4.5rem] animate-in fade-in zoom-in-95 duration-200 overflow-y-auto`}
+            className={`absolute z-[2147483647] bg-[var(--glass-bg)] backdrop-blur-[25px] saturate-[180%] rounded-[var(--radius-2xl)] border border-[var(--glass-border)] shadow-[var(--shadow-md)] p-1 sm:p-1.5 w-fit min-w-[3.5rem] sm:min-w-[4.5rem] animate-in fade-in zoom-in-95 duration-200 overflow-y-auto`}
             style={{
-                top: menuPosition.openUpward ? 'auto' : `${menuPosition.top}px`,
-                bottom: menuPosition.openUpward ? `calc(100% - ${menuPosition.top}px + 10px)` : 'auto',
+                top: isRotated
+                    ? (menuPosition.openUpward ? 'auto' : `${menuPosition.top}px`)
+                    : (menuPosition.openUpward
+                        ? 'auto' // Set via bottom if openUpward
+                        : `${menuPosition.top}px`),
+                bottom: isRotated
+                    ? (menuPosition.openUpward ? `calc(100% - ${menuPosition.top}px + 10px)` : 'auto')
+                    : (menuPosition.openUpward
+                        ? `${window.innerHeight - menuPosition.top}px` // Use calculated viewport top to derive bottom
+                        : 'auto'),
                 left: `${menuPosition.left}px`,
                 transform: 'translateX(-100%)',
                 maxHeight: menuPosition.maxHeight,
@@ -194,7 +222,8 @@ export function DesktopSpeedMenu({
                 It does NOT have overflow-hidden. The inner div does.
                 So portaling to containerRef is SAFE and CORRECT.
             */}
-            {showSpeedMenu && containerRef.current && createPortal(MenuContent, containerRef.current)}
+            {/* Speed Menu (Portal) */}
+            {showSpeedMenu && typeof document !== 'undefined' && createPortal(MenuContent, (isRotated && containerRef.current) ? containerRef.current : document.body)}
         </div>
     );
 }

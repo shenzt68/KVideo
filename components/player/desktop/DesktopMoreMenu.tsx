@@ -80,59 +80,79 @@ export function DesktopMoreMenu({
         };
     }, [containerRef]);
 
-    // Calculate menu position with available space awareness
+    // Dual Positioning Strategy
     const calculateMenuPosition = React.useCallback(() => {
         if (!buttonRef.current || !containerRef.current) return;
 
-        if (!buttonRef.current || !containerRef.current) return;
+        if (!isRotated) {
+            // Normal Mode: Non-rotated, potentially non-fullscreen
+            // Use Viewport Coordinates (getBoundingClientRect) and Portal to Document Body
+            const buttonRect = buttonRef.current.getBoundingClientRect();
+            const viewportHeight = window.innerHeight;
 
-        // Calculate position relative to container using offsetParent loop
-        let top = 0;
-        let left = 0;
-        let el: HTMLElement | null = buttonRef.current;
+            const spaceBelow = viewportHeight - buttonRect.bottom - 10;
+            const spaceAbove = buttonRect.top - 10;
 
-        while (el && el !== containerRef.current) {
-            top += el.offsetTop;
-            left += el.offsetLeft;
-            el = el.offsetParent as HTMLElement;
-        }
+            const estimatedMenuHeight = 450;
+            const actualMenuHeight = menuRef.current?.offsetHeight || estimatedMenuHeight;
 
-        const buttonHeight = buttonRef.current.offsetHeight;
-        const buttonWidth = buttonRef.current.offsetWidth;
-        const containerHeight = containerRef.current.offsetHeight;
+            const openUpward = spaceBelow < Math.min(actualMenuHeight, 300) && spaceAbove > spaceBelow;
+            const maxHeight = openUpward
+                ? Math.min(spaceAbove, actualMenuHeight)
+                : Math.min(spaceBelow, viewportHeight * 0.7);
 
-        // Use container dimensions for available space
-        const spaceBelow = containerHeight - (top + buttonHeight) - 20;
-        const spaceAbove = top - 20;
-
-        // Estimate menu height (or use actual if already rendered)
-        const estimatedMenuHeight = 450; // approximate height of menu
-        const actualMenuHeight = menuRef.current?.offsetHeight || estimatedMenuHeight;
-
-        // Determine if we should open upward
-        const openUpward = spaceBelow < Math.min(actualMenuHeight, 300) && spaceAbove > spaceBelow;
-
-        // Calculate max-height based on available space
-        const maxHeight = openUpward
-            ? Math.min(spaceAbove, actualMenuHeight)
-            : Math.min(spaceBelow, containerHeight * 0.7);
-
-        if (openUpward) {
             setMenuPosition({
-                top: top - 10,
-                left: left,
+                top: openUpward
+                    ? buttonRect.top - 10
+                    : buttonRect.bottom + 10,
+                left: buttonRect.right, // Align right edge (transform handled in CSS)
                 maxHeight: `${maxHeight}px`,
-                openUpward: true
+                openUpward: openUpward
             });
         } else {
-            setMenuPosition({
-                top: top + buttonHeight + 10,
-                left: left,
-                maxHeight: `${maxHeight}px`,
-                openUpward: false
-            });
+            // Rotated Mode: Use Container Coordinates (offset loop) and Portal to Container
+            let top = 0;
+            let left = 0;
+            let el: HTMLElement | null = buttonRef.current;
+
+            while (el && el !== containerRef.current) {
+                top += el.offsetTop;
+                left += el.offsetLeft;
+                el = el.offsetParent as HTMLElement;
+            }
+
+            const buttonHeight = buttonRef.current.offsetHeight;
+            const buttonWidth = buttonRef.current.offsetWidth;
+            const containerHeight = containerRef.current.offsetHeight;
+
+            const spaceBelow = containerHeight - (top + buttonHeight) - 20;
+            const spaceAbove = top - 20;
+
+            const estimatedMenuHeight = 450;
+            const actualMenuHeight = menuRef.current?.offsetHeight || estimatedMenuHeight;
+
+            const openUpward = spaceBelow < Math.min(actualMenuHeight, 300) && spaceAbove > spaceBelow;
+            const maxHeight = openUpward
+                ? Math.min(spaceAbove, actualMenuHeight)
+                : Math.min(spaceBelow, containerHeight * 0.7);
+
+            if (openUpward) {
+                setMenuPosition({
+                    top: top - 10,
+                    left: left + buttonWidth,
+                    maxHeight: `${maxHeight}px`,
+                    openUpward: true
+                });
+            } else {
+                setMenuPosition({
+                    top: top + buttonHeight + 10,
+                    left: left + buttonWidth,
+                    maxHeight: `${maxHeight}px`,
+                    openUpward: false
+                });
+            }
         }
-    }, [containerRef]);
+    }, [containerRef, isRotated]);
 
 
 
@@ -154,7 +174,7 @@ export function DesktopMoreMenu({
             const timer = setTimeout(calculateMenuPosition, 50);
             return () => clearTimeout(timer);
         }
-    }, [showMoreMenu, calculateMenuPosition]);
+    }, [showMoreMenu, calculateMenuPosition, isRotated]);
 
     const handleToggle = () => {
         if (!showMoreMenu) {
@@ -166,10 +186,18 @@ export function DesktopMoreMenu({
     const MenuContent = (
         <div
             ref={menuRef}
-            className={`absolute z-[50] bg-[var(--glass-bg)] backdrop-blur-[25px] saturate-[180%] rounded-[var(--radius-2xl)] border border-[var(--glass-border)] shadow-[var(--shadow-md)] p-1.5 sm:p-2 w-fit min-w-[200px] sm:min-w-[240px] animate-in fade-in zoom-in-95 duration-200 overflow-y-auto`}
+            className={`absolute z-[2147483647] bg-[var(--glass-bg)] backdrop-blur-[25px] saturate-[180%] rounded-[var(--radius-2xl)] border border-[var(--glass-border)] shadow-[var(--shadow-md)] p-1.5 sm:p-2 w-fit min-w-[200px] sm:min-w-[240px] animate-in fade-in zoom-in-95 duration-200 overflow-y-auto`}
             style={{
-                top: menuPosition.openUpward ? 'auto' : `${menuPosition.top}px`,
-                bottom: menuPosition.openUpward ? `calc(100% - ${menuPosition.top}px + 10px)` : 'auto',
+                top: isRotated
+                    ? (menuPosition.openUpward ? 'auto' : `${menuPosition.top}px`)
+                    : (menuPosition.openUpward
+                        ? 'auto'
+                        : `${menuPosition.top}px`),
+                bottom: isRotated
+                    ? (menuPosition.openUpward ? `calc(100% - ${menuPosition.top}px + 10px)` : 'auto')
+                    : (menuPosition.openUpward
+                        ? `${window.innerHeight - menuPosition.top}px`
+                        : 'auto'),
                 left: `${menuPosition.left}px`,
                 maxHeight: menuPosition.maxHeight,
             }}
@@ -409,7 +437,8 @@ export function DesktopMoreMenu({
             </button>
 
             {/* More Menu Dropdown (Portal) */}
-            {showMoreMenu && containerRef.current && createPortal(MenuContent, containerRef.current)}
+            {/* More Menu Dropdown (Portal) */}
+            {showMoreMenu && typeof document !== 'undefined' && createPortal(MenuContent, (isRotated && containerRef.current) ? containerRef.current : document.body)}
         </div>
     );
 }
